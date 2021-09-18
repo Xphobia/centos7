@@ -91,6 +91,9 @@ total 1.2G
 ### 其他设置
 
 ```bash
+# root 密码
+[root@localhost ~]# virt-customize -a $image_name --root-password password:123456 
+
 # 设置时区
 [root@localhost ~]# virt-customize -a $image_name --timezone "Asia/Shanghai" 
 
@@ -137,6 +140,16 @@ total 1.2G
 0001--bin-bash--c----curl--s--S-http---169-254-169-254-vm-tools-s
 0002--bin-systemctl-restart-zwatch-vm-agent-service
 ```
+
+
+
+## 上传镜像
+
+```bash
+[root@localhost ~]# nohup python -m SimpleHTTPServer > /dev/null 2>&1 &
+```
+
+zstack根据url添加镜像：http://192.168.1.106:8080/CentOS-7.6-x86.qcow2
 
 
 
