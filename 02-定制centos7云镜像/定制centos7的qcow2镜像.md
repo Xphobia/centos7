@@ -1,4 +1,4 @@
-# 定制centos7云镜像
+# 定制centos7的qcow2镜像
 
 
 
