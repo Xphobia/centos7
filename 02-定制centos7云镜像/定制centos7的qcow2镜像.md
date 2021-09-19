@@ -146,7 +146,7 @@ total 1.2G
 ## 上传镜像
 
 ```bash
-[root@localhost ~]# nohup python -m SimpleHTTPServer > /dev/null 2>&1 &
+[root@localhost ~]# nohup python -m SimpleHTTPServer 8080 > /dev/null 2>&1 &
 ```
 
 zstack根据url添加镜像：http://192.168.1.106:8080/CentOS-7.6-x86.qcow2
