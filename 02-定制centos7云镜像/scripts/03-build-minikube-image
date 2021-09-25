@@ -1,0 +1,132 @@
+#!/bin/bash
+
+set -e
+set -x
+
+# set env
+export LIBGUESTFS_BACKEND=direct
+
+workdir="/root/cloud-images"
+base_image_vmdk="centos7-1810.vmdk"
+minikube_image_qcow2="centos7-1810-minikube.qcow2"
+minikube_image_vmdk="centos7-1810-minikube.vmdk"
+minikube_image_vmdk_compressed="centos7-1810-minikube-compressed.vmdk"
+
+
+function init_workdir() {
+    if [ ! -d $workdir ]; then
+        mkdir -p $workdir
+    fi
+	
+	cd ${workdir}
+	
+	if [ ! -f $workdir/$base_image_vmdk ]; then
+		echo "$base_image_vmdk is not found"
+		exit 1
+	fi
+}
+
+
+function pre_build() {
+    # convert format vmdk to qcow2 (because vmdk format is read-only)
+    if [ -f $minikube_image_qcow2 ]; then
+        rm -rf $minikube_image_qcow2
+    fi
+    qemu-img convert -f vmdk -O qcow2 $base_image_vmdk $minikube_image_qcow2
+
+    # install aliyun repo
+    virt-customize -a $minikube_image_qcow2 --run-command 'mkdir -p /etc/yum.repos.d/bak'
+    virt-customize -a $minikube_image_qcow2 --run-command 'mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bak'
+    virt-customize -a $minikube_image_qcow2 --run-command 'curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo'
+    virt-customize -a $minikube_image_qcow2 --run-command 'curl -o /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo'
+
+    # install tools
+    virt-customize -a $minikube_image_qcow2 --install 'wget,vim,unzip,bash-completion'
+    virt-customize -a $minikube_image_qcow2 --install 'net-tools,bridge-utils'
+
+    # disable selinux and firewall
+    virt-customize -a $minikube_image_qcow2 --run-command 'systemctl disable firewalld'
+    virt-customize -a $minikube_image_qcow2 --run-command 'sed -i s/SELINUX=enforcing/SELINUX=disabled/g /etc/selinux/config'
+}
+
+function post_build() {
+    # clean
+    virt-customize -a $minikube_image_qcow2 --run-command 'yum clean all'
+    virt-customize -a $minikube_image_qcow2 --run-command 'yum makecache'
+
+    # convert back to vmdk format
+    qemu-img convert -f qcow2 -O vmdk  $minikube_image_qcow2 $minikube_image_vmdk
+
+    # # compress
+    # mkfs.ext4 /dev/sdb
+    # mount /dev/sdb /mnt
+    # export TEMP=/mnt
+    # export TMPDIR=/mnt
+    # virt-sparsify --compress $minikube_image_vmdk $minikube_image_vmdk_compressed
+}
+
+function install_docker_ce() {
+    # install docker-ce
+    virt-customize -a $minikube_image_qcow2 --run-command 'yum install -y yum-utils device-mapper-persistent-data lvm2'
+    virt-customize -a $minikube_image_qcow2 --run-command 'yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo'
+    virt-customize -a $minikube_image_qcow2 --run-command 'yum -y install docker-ce'
+    virt-customize -a $minikube_image_qcow2 --run-command 'systemctl enable docker'
+    virt-customize -a $minikube_image_qcow2 --append-line '/etc/profile:KKZONE=cn'
+
+    # config mirrors
+    virt-customize -a $minikube_image_qcow2 --run-command 'mkdir -p /etc/docker'
+    virt-customize -a $minikube_image_qcow2 --run-command 'echo {\"registry-mirrors\": [\"https://bsixseyi.mirror.aliyuncs.com\"]} > /etc/docker/daemon.json'
+}
+
+function install_kubectl() {
+    virt-customize -a ${minikube_image_qcow2} --run-command 'curl -L https://dl.k8s.io/release/v1.20.0/bin/linux/amd64/kubectl -o /tmp/kubectl'
+    virt-customize -a ${minikube_image_qcow2} --run-command 'install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl'
+    virt-customize -a ${minikube_image_qcow2} --run-command 'rm -rf /tmp/kubectl'
+    virt-customize -a ${minikube_image_qcow2} --firstboot-command 'kubectl completion bash > /etc/bash_completion.d/kubectl'
+
+    virt-ls -a $minikube_image_qcow2 /usr/local/bin/
+    # virt-customize -a ${minikube_image_qcow2} --run-command 'kubectl version --client'
+}
+
+function install_minikube() {
+    # reference: https://github.com/AliyunContainerService/minikube/wiki
+    virt-customize -a ${minikube_image_qcow2} --run-command 'yum install -y conntrack'
+    virt-customize -a ${minikube_image_qcow2} --run-command 'curl -L https://kubernetes.oss-cn-hangzhou.aliyuncs.com/minikube/releases/v1.20.0/minikube-linux-amd64 -o /tmp/minikube'
+    virt-customize -a ${minikube_image_qcow2} --run-command 'install -o root -g root -m 0755 /tmp/minikube /usr/local/bin/minikube'
+    virt-customize -a ${minikube_image_qcow2} --run-command 'rm -rf /tmp/minikube'
+    
+    virt-ls -a $minikube_image_qcow2 /usr/local/bin/
+    # virt-customize -a ${minikube_image_qcow2} --run-command 'minikube version'
+}
+
+function build_minikube_image_online() {
+    init_workdir
+    pre_build
+    install_docker_ce
+    install_kubectl
+    install_minikube
+    post_build
+}
+
+function build_k8s_image_offline() {
+    echo
+}
+
+
+function main() {
+    case $1 in
+        "online")
+            build_minikube_image_online
+			;;
+        "offline")
+            build_minikube_image_offline
+			;;
+		*)
+			echo "invalid action $1"
+            echo "usage: $0 online | offline"
+			;;
+    esac
+}
+
+
+main $@

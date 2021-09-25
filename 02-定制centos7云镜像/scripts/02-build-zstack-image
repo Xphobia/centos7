@@ -1,0 +1,129 @@
+#!/bin/bash
+
+set -e
+set -x
+
+# set env
+export LIBGUESTFS_BACKEND=direct
+
+workdir="/root/cloud-images"
+base_image_compressed="CentOS-7-x86_64-GenericCloud-1811.qcow2.xz"
+base_image="CentOS-7-x86_64-GenericCloud-1811.qcow2"
+image_name='CentOS-7.6-x86.qcow2'
+
+export DIB_RELEASE=7
+export DIB_CLOUD_INIT_ALLOW_SSH_PWAUTH="yes"
+export DIB_AVOID_PACKAGES_UPDATE=1
+export DIB_LOCAL_IMAGE="$workdir/$base_image" 
+
+
+function init_workdir() {
+    if [ ! -d $workdir ]; then
+        mkdir -p $workdir
+    fi
+}
+
+function download_base_image() {
+    cd $workdir
+
+    # 下载镜像
+    if [ ! -f $base_image_compressed ]; then
+        curl -O https://mirrors.ustc.edu.cn/centos-cloud/centos/7/images/CentOS-7-x86_64-GenericCloud-1811.qcow2.xz
+        xz -dk $base_image_compressed
+    fi
+
+    # 检查镜像版本
+    virt-inspector -a $base_image > report.xml
+    head ${BASE_IMAGE_NAME}.xml
+}
+
+function install_common_tools() {
+    # 设置时区
+    virt-customize -a $image_name --timezone "Asia/Shanghai" 
+
+    # 配置yum源
+    virt-customize -a $image_name --run-command 'mkdir -p /etc/yum.repos.d/bak'
+    virt-customize -a $image_name --run-command 'mv /etc/yum.repos.d/*.repo /etc/yum.repos.d/bak'
+    virt-customize -a $image_name --run-command 'curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo'
+    virt-customize -a $image_name --run-command 'curl -o /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo'
+
+    # 安装工具
+    virt-customize -a $minikube_image_qcow2 --install 'wget,vim,unzip,jq,bash-completion'
+    virt-customize -a $minikube_image_qcow2 --install 'nc,net-tools,bridge-utils'
+    virt-customize -a $image_name --install yum-utils,device-mapper-persistent-data,lvm2,openssl,socat,conntrack,ebtables,ipset,sysstat,iotop,iftop,nload,bind-utils,nc,binutils,iscsi-initiator-utils,kmod-xfs,xfsprogs,sg3_utils-devel.x86_64,sg3_utils-libs.x86_64,sg3_utils.x86_64,psmisc
+
+    # 安装qemu-guest-agent
+    virt-customize -a $image_name --install qemu-guest-agent
+    virt-customize -a $image_name --run-command 'systemctl enable qemu-guest-agent' 
+
+    # SSH服务
+    virt-customize -a $image_name --edit '/etc/ssh/sshd_config:s/GSS/#GSS/'
+    virt-customize -a $image_name --edit '/etc/ssh/sshd_config:s/#UseDNS yes/UseDNS no/'
+    # 查看修改
+    virt-cat -a $image_name /etc/ssh/sshd_config 
+
+    # vim
+    virt-customize -a $image_name --append-line '/etc/profile:alias vi=vim'
+    virt-customize -a $image_name --append-line '/etc/profile:unset MAILCHECK'
+
+    # clean
+    virt-customize -a $image_name --run-command 'yum clean all'
+    virt-customize -a $image_name --run-command 'yum makecache'
+}
+
+
+
+function upgrade_kernel() {
+    virt-customize -a $image_name --run-command 'rpm --import https://www.elrepo.org/RPM-GPG-KEY-elrepo.org'
+    virt-customize -a $image_name --run-command 'rpm -Uvh https://www.elrepo.org/elrepo-release-7.el7.elrepo.noarch.rpm'
+    virt-customize -a $image_name --run-command 'yum --enablerepo=elrepo-kernel install kernel-lt -y'
+    virt-customize -a $image_name --run-command 'grub2-set-default 0'
+    virt-customize -a $image_name --run-command 'grub2-mkconfig -o /boot/grub2/grub.cfg'
+}
+
+function build_openstack_image() {
+    # create openstack image
+    DIB_CLOUD_INIT_DATASOURCES="ConfigDrive, OpenStack"  disk-image-create -a amd64 -o $image_name  -x --image-size 64 vm base centos disable-selinux cloud-init cloud-init-datasources dhcp-all-interfaces growroot epel
+    install_common_tools
+}
+
+
+function build_zstack_image() {
+    # create zstack image
+    disk-image-create -a amd64 -o  $image_name -x --image-size 40 vm base centos disable-selinux cloud-init dhcp-all-interfaces epel
+    install_common_tools
+
+    # install zstack agent
+    virt-customize -a $image_name --firstboot-command '/bin/bash -c "$(curl -s -S http://169.254.169.254/vm-tools.sh)"'
+    virt-customize -a $image_name --firstboot-command "sed -i 's/9100/9104/g' /usr/local/zstack/zwatch-vm-agent/conf.yaml"
+    virt-customize -a $image_name --firstboot-command "/bin/systemctl restart zwatch-vm-agent.service"
+    virt-customize -a $image_name --run-command 'mv /usr/lib/virt-sysprep/scripts/0001--bin-systemctl-restart-zwatch-vm-agent-service /usr/lib/virt-sysprep/scripts/0002--bin-systemctl-restart-zwatch-vm-agent-service'
+
+    # check
+    virt-ls  -a $image_name  /usr/lib/virt-sysprep/scripts
+}
+
+
+function main() {
+    case $1 in
+        "init")
+            init_workdir
+            ;;
+        "download")
+            download_base_image
+            ;;
+        "openstack")
+            build_openstack_image
+            ;;
+        "zstack")
+            build_zstack_image
+            ;;
+		*)
+			echo "invalid action $1"
+            echo "usage: $0 init | download | openstack | zstack"
+			;;
+    esac
+}
+
+
+main $@

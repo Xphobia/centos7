@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# 安装DIB和Virt
+yum install centos-release-openstack-train -y
+yum install diskimage-builder -y
+yum install libguestfs-tools-c libguestfs-tools libguestfs -y
