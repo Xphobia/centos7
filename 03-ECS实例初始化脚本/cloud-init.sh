@@ -1,6 +1,6 @@
 
 
-yum install -y git
+yum install -y git tree lrzsz
 yum install -y python36
 
 
