@@ -71,3 +71,23 @@ rpmbuild-mysql-community-5.7.38/RPMS/
 1 directory, 10 files
 ```
 
+|                         包名      |                   功能            |
+| --------------------------------- | ----------------------------- |
+| mysql-community-client            | 提供MySQL数据库客户端应用程序和工具          |
+| mysql-community-common            | 提供MySQL数据库和客户端库共享文件 （工具）      |
+| mysql-community-devel             | 提供MySQL数据库客户端应用程序的库和头文件       |
+| mysql-community-embedded          | MySQL嵌入式函数库                   |
+| mysql-community-embedded-compat   | MySQL嵌入式兼容函数库                 |
+| mysql-community-embedded-devel    | 头文件和库文件作为Mysql的嵌入式库文件         |
+| mysql-community-libs              | MySQL 数据库客户端应用程序的共享库          |
+| mysql-community-libs-compat       | MySQL 5.6.31 数据库客户端应用程序的共享兼容库 |
+| mysql-community-minimal-debuginfo | mysql最小安装包的调试信息               |
+| mysql-community-server            | 非常快速和可靠的 SQL 数据库服务器           |
+| mysql-community-server-minimal    | 非常快速和可靠的 SQL 数据库服务器(最小化安装)    |
+| mysql-community-test              |                               |
+
+必须要有的两个包：
+
+　　mysql-community-client :提供工具  
+
+　　mysql-community-server: 提供服务的包
